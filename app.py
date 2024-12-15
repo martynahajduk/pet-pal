@@ -10,16 +10,17 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 import seaborn as sns
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # Global variables
 JAVA_SERVER_URL = "http://localhost:80/api/train"
 MODEL_PATH = "model/trained_model.pkl"
-PLOTS_DIR = "plots"
-
-# Ensure the plots directory exists
+PLOTS_DIR = os.path.join(app.root_path, 'plots')
 os.makedirs(PLOTS_DIR, exist_ok=True)
+
 
 
 def fetch_research_data():
@@ -44,52 +45,71 @@ def fetch_research_data():
 def preprocess_research_data(research_data, real_data):
     """
     Preprocess research data to align with real data:
-    - Filter by age range
-    - Align start point to real data
+    - Automatically align start point with the earliest week in real_data
     - Interpolate missing weeks
-    - Scale to match the real data trend
+    - Scale research data to match the real data trend
     """
     print(f"Initial research data shape: {research_data.shape}")
     print(f"Initial real data shape: {real_data.shape}")
 
-    # Filter research data to start from week 4
-    min_age = 4
+    # Automatically determine the minimum and maximum weeks
+    min_age = real_data['age_weeks'].min()
     max_age = real_data['age_weeks'].max()
+    print(f"Aligning research data to real data age range: {min_age} to {max_age}")
+
+    # Filter research data to the matching age range
     research_data = research_data[(research_data['age_weeks'] >= min_age) & (research_data['age_weeks'] <= max_age)]
 
-    # Ensure numeric columns are used
+    # Ensure numeric columns are used for processing
     numeric_columns = ['age_weeks', 'pet_weight', 'food_intake']
-    research_data = research_data[numeric_columns]
-    research_data = research_data.dropna()
+    research_data = research_data[numeric_columns].dropna()
 
-    # Group by age_weeks and calculate mean for aggregation
+    # Group by age_weeks and calculate mean to handle duplicates
     research_data = research_data.groupby('age_weeks').mean().reset_index()
 
     # Interpolate missing weeks
     all_weeks = np.arange(min_age, max_age + 1)
-    research_data = research_data.set_index('age_weeks').reindex(all_weeks).interpolate(method='linear').reset_index()
-    research_data.rename(columns={'index': 'age_weeks'}, inplace=True)
+    research_data = (
+        research_data.set_index('age_weeks')
+        .reindex(all_weeks)
+        .interpolate(method='linear')  # Fill missing data
+        .reset_index()
+        .rename(columns={'index': 'age_weeks'})
+    )
 
-    # Align starting point to match real data
+    # Align starting point to match real data at the minimum week
     start_week = min_age
-    real_start_weight = real_data.loc[real_data['age_weeks'] == start_week, 'pet_weight'].values[0]
-    real_start_food = real_data.loc[real_data['age_weeks'] == start_week, 'food_intake'].values[0]
+    if start_week in real_data['age_weeks'].values and start_week in research_data['age_weeks'].values:
+        real_start_weight = real_data.loc[real_data['age_weeks'] == start_week, 'pet_weight'].values[0]
+        real_start_food = real_data.loc[real_data['age_weeks'] == start_week, 'food_intake'].values[0]
 
-    research_data.loc[research_data['age_weeks'] == start_week, 'pet_weight'] = real_start_weight
-    research_data.loc[research_data['age_weeks'] == start_week, 'food_intake'] = real_start_food
+        research_start_weight = research_data.loc[research_data['age_weeks'] == start_week, 'pet_weight'].values[0]
+        research_start_food = research_data.loc[research_data['age_weeks'] == start_week, 'food_intake'].values[0]
 
-    # Scale research data to match the real data trend
+        # Adjust the research data to align with the real data at the start week
+        weight_offset = real_start_weight - research_start_weight
+        food_offset = real_start_food - research_start_food
+        research_data['pet_weight'] += weight_offset
+        research_data['food_intake'] += food_offset
+        print(f"Aligned research data to real data at week {start_week}: weight offset {weight_offset}, food offset {food_offset}")
+
+    # Scale research data to match the overall trend of real data
     weight_ratio = real_data['pet_weight'].mean() / research_data['pet_weight'].mean()
     food_ratio = real_data['food_intake'].mean() / research_data['food_intake'].mean()
     research_data['pet_weight'] *= weight_ratio
     research_data['food_intake'] *= food_ratio
+    print(f"Scaled research data with weight ratio {weight_ratio} and food ratio {food_ratio}")
 
     print(f"Preprocessed research data shape: {research_data.shape}")
     return research_data
 
 @app.route('/plots/<filename>')
 def serve_plot(filename):
-    """Serve the generated plots as static files."""
+    file_path = os.path.join(PLOTS_DIR, filename)
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return "File not found", 404
+    print(f"Serving plot: {file_path}")
     return send_from_directory(PLOTS_DIR, filename)
 
 @app.route('/api/train', methods=['POST'])
@@ -123,10 +143,13 @@ def train_model():
 def visualize_data():
     try:
         payload = request.get_json()
+        print("Received Payload:", payload)  # Debug
         if not isinstance(payload, dict) or "real_data" not in payload:
             return jsonify({"error": "Invalid payload format. Expected a dictionary with key 'real_data'."}), 400
 
+        # Extract real data from payload
         real_data = pd.DataFrame(payload["real_data"])
+        print("Parsed Real Data:", real_data.head())  # Debug
         required_columns = ["age_weeks", "pet_weight", "food_intake"]
 
         if not all(col in real_data.columns for col in required_columns):
@@ -139,20 +162,12 @@ def visualize_data():
         if research_data.empty:
             return jsonify({"error": "No matching research data found after preprocessing."}), 400
 
-        model = joblib.load(MODEL_PATH)
-
-        real_data["predicted_weight"] = model.predict(real_data[["age_weeks", "food_intake"]])
-        research_data["predicted_weight"] = model.predict(research_data[["age_weeks", "food_intake"]])
-
-        # Sort real data by age_weeks to ensure correct plotting order
+        # Sort data for consistent plotting
         real_data = real_data.sort_values(by="age_weeks")
 
-        # Use a valid Matplotlib style
-        plt.style.use('ggplot')  # A built-in style
-
-        # Growth Trend Plot
+        # Create Growth Trend Plot
         plt.figure(figsize=(8, 6))
-        plt.plot(research_data['age_weeks'], research_data['predicted_weight'], label='Research Data', color='blue', lw=2)
+        plt.plot(research_data['age_weeks'], research_data['pet_weight'], label='Research Data', color='blue', lw=2)
         plt.plot(real_data['age_weeks'], real_data['pet_weight'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
         plt.scatter(real_data['age_weeks'], real_data['pet_weight'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
         plt.xlabel('Age (weeks)', fontsize=14)
@@ -160,10 +175,12 @@ def visualize_data():
         plt.title('Growth Trend', fontsize=16)
         plt.legend(fontsize=12)
         plt.grid(alpha=0.5)
-        plt.savefig(f"{PLOTS_DIR}/growth_trend.png")
+        growth_trend_path = f"{PLOTS_DIR}/growth_trend.png"
+        plt.savefig(growth_trend_path)
+        print(f"Saved Growth Trend at {growth_trend_path}")
         plt.close()
 
-        # Food Intake Trend Plot
+        # Create Food Intake Trend Plot
         plt.figure(figsize=(8, 6))
         plt.plot(research_data['age_weeks'], research_data['food_intake'], label='Research Data', color='blue', lw=2)
         plt.plot(real_data['age_weeks'], real_data['food_intake'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
@@ -173,15 +190,28 @@ def visualize_data():
         plt.title('Food Intake Trend', fontsize=16)
         plt.legend(fontsize=12)
         plt.grid(alpha=0.5)
-        plt.savefig(f"{PLOTS_DIR}/food_intake_trend.png")
+        food_intake_trend_path = f"{PLOTS_DIR}/food_intake_trend.png"
+        plt.savefig(food_intake_trend_path)
+        print(f"Saved Growth Trend at {food_intake_trend_path}")
         plt.close()
 
+        # Construct verdict based on comparison logic
+        verdict_data = []
+        for _, row in real_data.iterrows():
+            research_weight = research_data.loc[research_data["age_weeks"] == row["age_weeks"], "pet_weight"].values[0]
+            health_status = "Healthy" if row["pet_weight"] >= research_weight * 0.9 else "Unhealthy"
+            verdict_data.append({"age_weeks": row["age_weeks"], "health_status": health_status})
+
+        # Send response with plot paths and verdicts
         return jsonify({
-            "message": "Visualizations generated successfully.",
+            "message": "Visualization generated successfully.",
             "plots": ["growth_trend.png", "food_intake_trend.png"],
-            "health_data": real_data[["age_weeks", "pet_weight", "food_intake"]].to_dict(orient="records")
+
+            "verdict_data": verdict_data
         }), 200
+
     except Exception as e:
+        print("Error in visualize_data:", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -214,6 +244,26 @@ def descriptive_plots():
             "reservoirHeight": "reservoir_height"
         }
         pet_data_log_descriptive.rename(columns=column_mapping, inplace=True)
+
+        # Check for the timestamp column
+        if "timestamp" not in pet_data_log_descriptive.columns:
+            print("Warning: 'timestamp' column is missing. Generating synthetic timestamps.")
+            pet_data_log_descriptive["timestamp"] = pd.date_range(
+                start="2024-01-01", periods=len(pet_data_log_descriptive), freq="H"
+            )
+        else:
+            # Ensure timestamp is in datetime format
+            pet_data_log_descriptive["timestamp"] = pd.to_datetime(
+                pet_data_log_descriptive["timestamp"], format='%Y-%m-%d %H:%M:%S', errors='coerce'
+            )
+
+        # Check for null timestamps
+        if pet_data_log_descriptive["timestamp"].isnull().any():
+            print("Error: Invalid timestamp format in data.")
+            return jsonify({"error": "Invalid timestamp format in data."}), 400
+
+        # Debug log for timestamps
+        print("Timestamps in DataFrame:\n", pet_data_log_descriptive["timestamp"])
 
         # Create plots directory if it doesn't exist
         os.makedirs(PLOTS_DIR, exist_ok=True)
