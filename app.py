@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+import seaborn as sns
 
 app = Flask(__name__)
 
@@ -214,81 +215,91 @@ def descriptive_plots():
         }
         pet_data_log_descriptive.rename(columns=column_mapping, inplace=True)
 
-        # Check for the timestamp column
-        if "timestamp" not in pet_data_log_descriptive.columns:
-            print("Warning: 'timestamp' column is missing. Generating synthetic timestamps.")
-            pet_data_log_descriptive["timestamp"] = pd.date_range(
-                start="2024-01-01", periods=len(pet_data_log_descriptive), freq="H"
-            )
-        else:
-            # Ensure timestamp is in datetime format
-            pet_data_log_descriptive["timestamp"] = pd.to_datetime(
-                pet_data_log_descriptive["timestamp"], format='%Y-%m-%d %H:%M:%S', errors='coerce'
-            )
-
-        # Check for null timestamps
-        if pet_data_log_descriptive["timestamp"].isnull().any():
-            print("Error: Invalid timestamp format in data.")
-            return jsonify({"error": "Invalid timestamp format in data."}), 400
-
-        # Debug log for timestamps
-        print("Timestamps in DataFrame:\n", pet_data_log_descriptive["timestamp"])
-
         # Create plots directory if it doesn't exist
         os.makedirs(PLOTS_DIR, exist_ok=True)
 
-        # Generate Scatter Plot: Bowl Weight vs. Pet Weight
+
+        # Scatter Plot: Bowl Weight vs. Pet Weight
+        corr = pet_data_log_descriptive['bowl_weight'].corr(pet_data_log_descriptive['pet_weight'])
+        scatter_plot_conclusion = (
+            "The scatter plot shows the relationship between the amount of food provided (in grams) and the pet's weight. "
+            f"The calculated correlation is {corr:.2f}, indicating "
+            + ("a strong positive relationship between food portions and pet weight." if corr > 0.7 else
+               "a weak or no significant relationship between food portions and pet weight.")
+        )
         plt.figure(figsize=(8, 6))
         plt.scatter(
             pet_data_log_descriptive['bowl_weight'],
             pet_data_log_descriptive['pet_weight'],
             color='blue', edgecolor='black', alpha=0.7
         )
-        plt.xlabel('Bowl Weight (grams)', fontsize=14)
+        plt.xlabel('Food Portion (grams)', fontsize=14)
         plt.ylabel('Pet Weight (grams)', fontsize=14)
-        plt.title('Bowl Weight vs. Pet Weight', fontsize=16)
+        plt.title('Food Portion vs. Pet Weight', fontsize=16)
         plt.grid(alpha=0.5)
-        scatter_plot_path = f"{PLOTS_DIR}/bowl_vs_pet_weight.png"
+        scatter_plot_path = f"{PLOTS_DIR}/food_portion_vs_pet_weight.png"
         plt.savefig(scatter_plot_path)
         plt.close()
 
-        # Generate Bar Chart: Average Pet Weight by Hour of Day
-        pet_data_log_descriptive['hour'] = pet_data_log_descriptive['timestamp'].dt.hour
-        weight_by_hour = pet_data_log_descriptive.groupby('hour')['pet_weight'].mean()
+        # Bar Chart: Average Pet Weight by Age in Weeks
+        avg_weight_by_age_week = pet_data_log_descriptive.groupby('age_weeks')['pet_weight'].mean()
+        max_weight_age = avg_weight_by_age_week.idxmax()
+        bar_chart_conclusion = (
+            f"The bar chart illustrates the average pet weight across different weeks of age. "
+            f"The highest average weight occurs at week {max_weight_age}, where pets weigh approximately "
+            f"{avg_weight_by_age_week[max_weight_age]:.2f} grams. Younger pets tend to weigh less, "
+            f"while the weight increases steadily as they grow older."
+        )
         plt.figure(figsize=(10, 6))
-        weight_by_hour.plot(kind='bar', color='green', edgecolor='black')
-        plt.xlabel('Hour of the Day', fontsize=14)
+        avg_weight_by_age_week.plot(kind='bar', color='green', edgecolor='black')
+        plt.xlabel('Age in Weeks', fontsize=14)
         plt.ylabel('Average Pet Weight (grams)', fontsize=14)
-        plt.title('Average Pet Weight by Hour of the Day', fontsize=16)
+        plt.title('Average Pet Weight by Age in Weeks', fontsize=16)
         plt.grid(axis='y', alpha=0.5)
         plt.xticks(rotation=0)
-        bar_chart_path = f"{PLOTS_DIR}/weight_by_hour.png"
+
+        bar_chart_path = f"{PLOTS_DIR}/weight_by_age_week.png"
         plt.savefig(bar_chart_path)
         plt.close()
 
-        # Generate Combo Plot: Feedings Per Day vs. Average Pet Weight
-        pet_data_log_descriptive['date'] = pet_data_log_descriptive['timestamp'].dt.date
-        feedings_per_day = pet_data_log_descriptive.groupby('date').size()
-        avg_weight_per_day = pet_data_log_descriptive.groupby('date')['pet_weight'].mean()
-        plt.figure(figsize=(10, 6))
-        plt.plot(feedings_per_day.index, feedings_per_day.values, label='Feedings Per Day', color='blue', lw=2)
-        plt.plot(avg_weight_per_day.index, avg_weight_per_day.values, label='Average Pet Weight', color='orange', lw=2)
-        plt.xlabel('Date', fontsize=14)
-        plt.ylabel('Count / Weight', fontsize=14)
-        plt.title('Feedings Per Day vs. Average Pet Weight', fontsize=16)
-        plt.legend(fontsize=12)
-        plt.grid(alpha=0.5)
-        combo_plot_path = f"{PLOTS_DIR}/feedings_vs_weight.png"
-        plt.savefig(combo_plot_path)
+        # Heat Map: Age, Food Portion, Pet Weight
+        heatmap_data = pet_data_log_descriptive.pivot(
+            index='age_weeks', columns='bowl_weight', values='pet_weight'
+        )
+        max_weight = heatmap_data.max().max()
+        max_weight_position = heatmap_data.stack().idxmax()
+        heatmap_conclusion = (
+            "The heatmap visualizes the weight of pets based on their age (in weeks) and food portions (in grams). "
+            f"The highest observed weight is {max_weight:.2f} grams, which occurs at age {max_weight_position[0]} weeks "
+            f"when the food portion is {max_weight_position[1]} grams. This chart helps to identify optimal feeding "
+            "portions for pets at various stages of growth."
+        )
+
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(heatmap_data, cmap='coolwarm', annot=True, fmt='.1f', cbar_kws={'label': 'Pet Weight (grams)'})
+        plt.title('Heatmap: Age, Food Portion, and Pet Weight', fontsize=16)
+        plt.xlabel('Food Portion (grams)', fontsize=14)
+        plt.ylabel('Age (weeks)', fontsize=14)
+
+        heatmap_path = f"{PLOTS_DIR}/heatmap_age_food_weight.png"
+        plt.savefig(heatmap_path)
         plt.close()
+
+        # Combine conclusions
+        conclusions = {
+            "scatter_plot": scatter_plot_conclusion,
+            "bar_chart": bar_chart_conclusion,
+            "heatmap": heatmap_conclusion
+        }
 
         return jsonify({
             "message": "Descriptive plots generated successfully.",
             "plots": [
-                "bowl_vs_pet_weight.png",
-                "weight_by_hour.png",
-                "feedings_vs_weight.png"
-            ]
+                "food_portion_vs_pet_weight.png",
+                "weight_by_age_week.png",
+                "heatmap_age_food_weight.png"
+            ],
+            "conclusions": conclusions
         }), 200
     except Exception as e:
         print("Unhandled exception:", e)
