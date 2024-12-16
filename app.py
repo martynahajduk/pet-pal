@@ -155,6 +155,12 @@ def visualize_data():
         ax.grid(alpha=0.5)
         growth_trend_base64 = plot_to_base64(fig)
         plt.close(fig)
+        growth_trend_conclusion = (
+            "The growth trend plot compares the pet weight in real data and research data over the course of weeks. "
+            "The real data (shown as orange points and dashed line) may show some fluctuations compared to the research data (blue line), "
+            "indicating natural variations in pet growth. "
+            "If the real data points fall significantly below the research line, it could indicate undernourishment or slower growth."
+        )
 
         # Create Food Intake Trend Plot
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -168,6 +174,11 @@ def visualize_data():
         ax.grid(alpha=0.5)
         food_intake_trend_base64 = plot_to_base64(fig)
         plt.close(fig)
+        food_intake_trend_conclusion = (
+            "The food intake trend plot compares the food intake of pets in real data and research data over time. "
+            "A steady increase in food intake (shown in orange for real data and blue for research) is expected as pets grow. "
+            "Fluctuations or a decrease in food intake may suggest feeding issues or health concerns that need to be addressed."
+        )
 
         # Scatter Plot: Bowl Weight vs. Pet Weight
         if "food_intake" in real_data.columns:
@@ -208,23 +219,36 @@ def visualize_data():
         bar_chart_base64 = plot_to_base64(fig)
         plt.close(fig)
 
-        # Heat Map: Age, Food Intake, Pet Weight
-        heatmap_data = real_data.pivot(index='age_weeks', columns='food_intake', values='pet_weight')
-        max_weight = heatmap_data.max().max()
-        max_weight_position = heatmap_data.stack().idxmax()
-        heatmap_conclusion = (
-            f"The heatmap visualizes the weight of pets based on their age (in weeks) and food portions (in grams). "
-            f"The highest observed weight is {max_weight:.2f} grams, which occurs at age {max_weight_position[0]} weeks "
-            f"when the food portion is {max_weight_position[1]} grams. This chart helps to identify optimal feeding "
-            "portions for pets at various stages of growth."
-        )
-        fig, ax = plt.subplots(figsize=(12, 8))
-        sns.heatmap(heatmap_data, cmap='coolwarm', annot=True, fmt='.1f', cbar_kws={'label': 'Pet Weight (grams)'})
-        ax.set_title('Heatmap: Age, Food Intake, and Pet Weight', fontsize=16)
+        # # Heat Map: Age, Food Intake, Pet Weight
+        # heatmap_data = real_data.pivot(index='age_weeks', columns='food_intake', values='pet_weight')
+        # max_weight = heatmap_data.max().max()
+        # max_weight_position = heatmap_data.stack().idxmax()
+        # heatmap_conclusion = (
+        #     f"The heatmap visualizes the weight of pets based on their age (in weeks) and food portions (in grams). "
+        #     f"The highest observed weight is {max_weight:.2f} grams, which occurs at age {max_weight_position[0]} weeks "
+        #     f"when the food portion is {max_weight_position[1]} grams. This chart helps to identify optimal feeding "
+        #     "portions for pets at various stages of growth."
+        # )
+        # fig, ax = plt.subplots(figsize=(12, 8))
+        # sns.heatmap(heatmap_data, cmap='coolwarm', annot=True, fmt='.1f', cbar_kws={'label': 'Pet Weight (grams)'})
+        # ax.set_title('Heatmap: Age, Food Intake, and Pet Weight', fontsize=16)
+        # ax.set_xlabel('Food Intake (grams)', fontsize=14)
+        # ax.set_ylabel('Age (weeks)', fontsize=14)
+        # heatmap_base64 = plot_to_base64(fig)
+        # plt.close(fig)
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.hist(real_data['food_intake'], bins=20, color='purple', edgecolor='black', alpha=0.7)
         ax.set_xlabel('Food Intake (grams)', fontsize=14)
-        ax.set_ylabel('Age (weeks)', fontsize=14)
-        heatmap_base64 = plot_to_base64(fig)
+        ax.set_ylabel('Frequency', fontsize=14)
+        ax.set_title('Food Intake Distribution', fontsize=16)
+        food_intake_histogram_base64 = plot_to_base64(fig)
         plt.close(fig)
+        food_intake_histogram_conclusion = (
+            "The food intake histogram shows the distribution of food portions across pets. "
+            "It helps identify the most common food portion sizes and if any pets are receiving unusually high or low amounts. "
+            "This insight can inform better feeding practices and help in adjusting portions for optimal pet growth."
+        )
 
         # Construct verdict based on comparison logic
         verdict_data = []
@@ -242,11 +266,15 @@ def visualize_data():
             "food_intake_trend_base64": food_intake_trend_base64,
             "scatter_plot_base64": scatter_plot_base64,
             "bar_chart_base64": bar_chart_base64,
-            "heatmap_base64": heatmap_base64,
+            # "heatmap_base64": heatmap_base64,
             "verdict_data": verdict_data,
             "scatter_plot_conclusion": scatter_plot_conclusion,
             "bar_chart_conclusion": bar_chart_conclusion,
-            "heatmap_conclusion": heatmap_conclusion
+            # "heatmap_conclusion": heatmap_conclusion,
+            "food_intake_histogram_base64" : food_intake_histogram_base64,
+            "food_intake_histogram_conclusion": food_intake_histogram_conclusion,
+            "growth_trend_conclusion": growth_trend_conclusion,
+            "food_intake_trend_conclusion": food_intake_trend_conclusion
         }), 200
 
     except Exception as e:
