@@ -1,5 +1,7 @@
 import base64
 import io
+import json
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -38,7 +40,8 @@ def fetch_research_data():
 
 def preprocess_research_data(research_data, real_data):
     """Preprocess research data to align with real data."""
-    min_age = real_data['age_weeks'].min()
+    print(real_data)
+    min_age = pd.to_numeric(real_data['age_weeks']).min()
     max_age = real_data['age_weeks'].max()
 
     print(f"Real Data Age Range: {min_age} to {max_age}")
@@ -50,7 +53,7 @@ def preprocess_research_data(research_data, real_data):
         (research_data['age_weeks'] >= min_age) & (research_data['age_weeks'] <= max_age)
     ]
     research_data = research_data[['age_weeks', 'pet_weight', 'food_intake']].dropna()
-    research_data = research_data.groupby('age_weeks').mean().reset_index()
+    research_data = research_data.groupby('age_weeks').mean(numeric_only=True).reset_index()
 
     all_weeks = np.arange(min_age, max_age + 1)
     research_data = (
@@ -71,8 +74,8 @@ def preprocess_research_data(research_data, real_data):
         research_data['pet_weight'] += real_start_weight - research_start_weight
         research_data['food_intake'] += real_start_food - research_start_food
 
-    weight_ratio = real_data['pet_weight'].mean() / research_data['pet_weight'].mean()
-    food_ratio = real_data['food_intake'].mean() / research_data['food_intake'].mean()
+    weight_ratio = real_data['pet_weight'].mean(numeric_only=True) / research_data['pet_weight'].mean(numeric_only=True)
+    food_ratio = real_data['food_intake'].mean(numeric_only=True) / research_data['food_intake'].mean(numeric_only=True)
     research_data['pet_weight'] *= weight_ratio
     research_data['food_intake'] *= food_ratio
 
@@ -119,17 +122,10 @@ def visualize_data():
         if not isinstance(payload, dict) or "real_data" not in payload:
             return jsonify({"error": "Invalid payload format. Expected a dictionary with key 'real_data'."}), 400
 
-        # Extract real data from payload
-        real_data = pd.DataFrame(payload["real_data"])
-        print("Parsed Real Data:", real_data.head())  # Debug
+
         required_columns = ["age_weeks", "pet_weight", "food_intake"]
-
-        if not all(col in real_data.columns for col in required_columns):
-            return jsonify({"error": f"Missing required columns in real data: {required_columns}"}), 400
-
         # Fetch and preprocess research data
         research_data = fetch_research_data()
-        research_data = preprocess_research_data(research_data, real_data)
 
         # Debugging: Check processed data
         print("Processed Research Data:\n", research_data.head())
@@ -137,105 +133,145 @@ def visualize_data():
         if research_data.empty:
             return jsonify({"error": "No matching research data found after preprocessing."}), 400
 
-        # Sort data for consistent plotting
-        real_data = real_data.sort_values(by="age_weeks")
+        # Extract real data from payload
+        real_data = payload['real_data']
 
-        # 1. Growth Trend Plot
-        growth_anomalies = detect_anomalies(
-            real_data['age_weeks'], research_data['pet_weight'], real_data['pet_weight']
-        )
-        print("Detected Growth Anomalies:", growth_anomalies)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(research_data['age_weeks'], research_data['pet_weight'], label='Research Data', color='blue', lw=2)
-        ax.plot(real_data['age_weeks'], real_data['pet_weight'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
-        ax.scatter(real_data['age_weeks'], real_data['pet_weight'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
-        ax.set_title('Growth Trend')
-        ax.set_xlabel('Age (weeks)')
-        ax.set_ylabel('Weight')
-        ax.legend()
-        growth_trend_base64 = plot_to_base64(fig)
-        plt.close(fig)
+        returnList = {}
+        for item in real_data :
+            # innerList = {}
+            df = pd.DataFrame(real_data[item])
 
-        growth_conclusion = (
-            "The Growth Trend indicates deviations in weight at weeks where real data differs "
-            "from research expectations. Anomalies are detected where deviations exceed 10%."
-        )
+            if not all(col in df.columns for col in required_columns):
+                returnList[str(item)] = {
+                    "growth_trend_base64": None,
+                    "food_intake_trend_base64": None,
+                    "scatter_plot_base64": None,
+                    "bar_chart_base64": None,
+                    "histogram_base64": None,
+                    "growth_trend_conclusion": None,
+                    "food_intake_trend_conclusion": None,
+                    "scatter_plot_conclusion": None,
+                    "bar_chart_conclusion": None,
+                    "histogram_conclusion": None,
+                    "growth_anomalies": None,
+                    "food_anomalies": None
+                }
+                continue
 
-        # 2. Food Intake Trend Plot
-        food_anomalies = detect_anomalies(
-            real_data['age_weeks'], research_data['food_intake'], real_data['food_intake']
-        )
+            research_data = preprocess_research_data(research_data, df)
+            df = df.sort_values(by="age_weeks")
+            print(item)
+            print("Parsed Real Data:\n", df.head())  # Debug
 
-        print("Detected Food Intake Anomalies:", food_anomalies)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(research_data['age_weeks'], research_data['food_intake'], label='Research Data', color='blue', lw=2)
-        ax.plot(real_data['age_weeks'], real_data['food_intake'], label='Real Data (Line)', color='orange', linestyle='--', lw=2)
-        ax.scatter(real_data['age_weeks'], real_data['food_intake'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
-        ax.set_title('Food Intake Trend')
-        ax.set_xlabel('Age (weeks)')
-        ax.set_ylabel('Food Intake')
-        ax.legend()
-        food_intake_trend_base64 = plot_to_base64(fig)
-        plt.close(fig)
+            df.drop(columns=['breed'], inplace=True)
 
-        food_conclusion = (
-            "The Food Intake Trend shows significant differences in intake at weeks "
-            "where observed values deviate from expected intake based on research data."
-        )
+            if not all(col in df.columns for col in required_columns):
+                return jsonify({"error": f"Missing required columns in real data: {required_columns}"}), 400
+
+            # df = df.groupby(['age_weeks'])['pet_weight', 'food_intake'].mean()
+
+            # Sort data for consistent plotting
+            # df = df.sort_values(by="age_weeks")
+
+            # 1. Growth Trend Plot
+            growth_anomalies = detect_anomalies(
+                df['age_weeks'], research_data['pet_weight'], df['pet_weight']
+            )
+            print("Detected Growth Anomalies:", growth_anomalies)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.plot(research_data['age_weeks'], research_data['pet_weight'], label='Research Data', color='red', lw=2)
+            ax.plot(df['age_weeks'], df['pet_weight'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
+            ax.scatter(df['age_weeks'], df['pet_weight'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
+            ax.set_title('Growth Trend')
+            ax.set_xlabel('Age (weeks)')
+            ax.set_ylabel('Weight')
+            ax.legend()
+            growth_trend_base64 = plot_to_base64(fig)
+            plt.close(fig)
+
+            growth_conclusion = (
+                "The Growth Trend indicates deviations in weight at weeks where real data differs "
+                "from research expectations. Anomalies are detected where deviations exceed 10%."
+            )
+
+            # 2. Food Intake Trend Plot
+            food_anomalies = detect_anomalies(
+                df['age_weeks'], research_data['food_intake'], df['food_intake']
+            )
+
+            print("Detected Food Intake Anomalies:", food_anomalies)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.plot(research_data['age_weeks'], research_data['food_intake'], label='Research Data', color='blue', lw=2)
+            ax.plot(df['age_weeks'], df['food_intake'], label='Real Data (Line)', color='orange', linestyle='--', lw=2)
+            ax.scatter(df['age_weeks'], df['food_intake'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
+            ax.set_title('Food Intake Trend')
+            ax.set_xlabel('Age (weeks)')
+            ax.set_ylabel('Food Intake')
+            ax.legend()
+            food_intake_trend_base64 = plot_to_base64(fig)
+            plt.close(fig)
+
+            food_conclusion = (
+                "The Food Intake Trend shows significant differences in intake at weeks "
+                "where observed values deviate from expected intake based on research data."
+            )
 
 
 
-        # 3. Scatter Plot: Food Intake vs Pet Weight
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(real_data['food_intake'], real_data['pet_weight'], alpha=0.6, color='purple')
-        ax.set_title('Food Intake vs Pet Weight')
-        ax.set_xlabel('Food Intake (grams)')
-        ax.set_ylabel('Pet Weight (grams)')
-        scatter_plot_base64 = plot_to_base64(fig)
-        plt.close(fig)
+            # 3. Scatter Plot: Food Intake vs Pet Weight
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.scatter(df['food_intake'], df['pet_weight'], alpha=0.6, color='purple')
+            ax.set_title('Food Intake vs Pet Weight')
+            ax.set_xlabel('Food Intake (grams)')
+            ax.set_ylabel('Pet Weight (grams)')
+            scatter_plot_base64 = plot_to_base64(fig)
+            plt.close(fig)
 
-        scatter_conclusion = "Scatter plot shows the relationship between Food Intake and Pet Weight."
+            scatter_conclusion = "Scatter plot shows the relationship between Food Intake and Pet Weight."
 
-        # 4. Bar Chart: Average Pet Weight by Week
-        avg_weight = real_data.groupby('age_weeks')['pet_weight'].mean()
-        fig, ax = plt.subplots(figsize=(10, 6))
-        avg_weight.plot(kind='bar', color='green', edgecolor='black', ax=ax)
-        ax.set_title('Average Pet Weight by Age (Weeks)')
-        ax.set_xlabel('Age (Weeks)')
-        ax.set_ylabel('Average Weight')
-        bar_chart_base64 = plot_to_base64(fig)
-        plt.close(fig)
+            # 4. Bar Chart: Average Pet Weight by Week
+            avg_weight = df.groupby('age_weeks')['pet_weight'].mean()
+            fig, ax = plt.subplots(figsize=(10, 6))
+            avg_weight.plot(kind='bar', color='green', edgecolor='black', ax=ax)
+            ax.set_title('Average Pet Weight by Age (Weeks)')
+            ax.set_xlabel('Age (Weeks)')
+            ax.set_ylabel('Average Weight')
+            bar_chart_base64 = plot_to_base64(fig)
+            plt.close(fig)
 
-        bar_chart_conclusion = "Bar chart visualizes the average pet weight per week."
+            bar_chart_conclusion = "Bar chart visualizes the average pet weight per week."
 
-        # 5. Histogram: Food Intake Distribution
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.hist(real_data['food_intake'], bins=20, color='orange', edgecolor='black')
-        ax.set_title('Food Intake Distribution')
-        ax.set_xlabel('Food Intake (grams)')
-        ax.set_ylabel('Frequency')
-        histogram_base64 = plot_to_base64(fig)
-        plt.close(fig)
-        histogram_conclusion = "Histogram displays the distribution of food intake values."
+            # 5. Histogram: Food Intake Distribution
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.hist(df['food_intake'], bins=20, color='orange', edgecolor='black')
 
-        # Return response
-        return jsonify({
-            "growth_trend_base64": growth_trend_base64,
-            "food_intake_trend_base64": food_intake_trend_base64,
-            "scatter_plot_base64": scatter_plot_base64,
-            "bar_chart_base64": bar_chart_base64,
-            "histogram_base64": histogram_base64,
-            "growth_trend_conclusion": growth_conclusion,
-            "food_intake_trend_conclusion": food_conclusion,
-            "scatter_plot_conclusion": scatter_conclusion,
-            "bar_chart_conclusion": bar_chart_conclusion,
-            "histogram_conclusion": histogram_conclusion,
-            "growth_anomalies": growth_anomalies,
-            "food_anomalies": food_anomalies
-        }), 200
+            ax.set_title('Food Intake Distribution')
+            ax.set_xlabel('Food Intake (grams)')
+            ax.set_ylabel('Frequency')
+            histogram_base64 = plot_to_base64(fig)
+            plt.close(fig)
+            histogram_conclusion = "Histogram displays the distribution of food intake values."
+
+            returnList[str(item)] = {
+                "growth_trend_base64": growth_trend_base64,
+                "food_intake_trend_base64": food_intake_trend_base64,
+                "scatter_plot_base64": scatter_plot_base64,
+                "bar_chart_base64": bar_chart_base64,
+                "histogram_base64": histogram_base64,
+                "growth_trend_conclusion": growth_conclusion,
+                "food_intake_trend_conclusion": food_conclusion,
+                "scatter_plot_conclusion": scatter_conclusion,
+                "bar_chart_conclusion": bar_chart_conclusion,
+                "histogram_conclusion": histogram_conclusion,
+                "growth_anomalies": growth_anomalies,
+                "food_anomalies": food_anomalies
+            }
+
+        # print(returnList)
+        return returnList
 
     except Exception as e:
-        print("Error in visualize_data:", e)
+        print("Error in visualize_data:", e.with_traceback())
         return jsonify({"error": str(e)}), 500
 
 def detect_anomalies(weeks, expected_data, actual_data, threshold=0.1):
