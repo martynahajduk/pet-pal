@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import joblib
 import requests
 from flask import Flask, request, jsonify
+from scipy.stats import linregress
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
@@ -40,8 +41,7 @@ def fetch_research_data():
 
 def preprocess_research_data(research_data, real_data):
     """Preprocess research data to align with real data."""
-    print(real_data)
-    min_age = pd.to_numeric(real_data['age_weeks']).min()
+    min_age = real_data['age_weeks'].min()
     max_age = real_data['age_weeks'].max()
 
     print(f"Real Data Age Range: {min_age} to {max_age}")
@@ -53,7 +53,7 @@ def preprocess_research_data(research_data, real_data):
         (research_data['age_weeks'] >= min_age) & (research_data['age_weeks'] <= max_age)
     ]
     research_data = research_data[['age_weeks', 'pet_weight', 'food_intake']].dropna()
-    research_data = research_data.groupby('age_weeks').mean(numeric_only=True).reset_index()
+    research_data = research_data.groupby('age_weeks').mean().reset_index()
 
     all_weeks = np.arange(min_age, max_age + 1)
     research_data = (
@@ -74,8 +74,8 @@ def preprocess_research_data(research_data, real_data):
         research_data['pet_weight'] += real_start_weight - research_start_weight
         research_data['food_intake'] += real_start_food - research_start_food
 
-    weight_ratio = real_data['pet_weight'].mean(numeric_only=True) / research_data['pet_weight'].mean(numeric_only=True)
-    food_ratio = real_data['food_intake'].mean(numeric_only=True) / research_data['food_intake'].mean(numeric_only=True)
+    weight_ratio = real_data['pet_weight'].mean() / research_data['pet_weight'].mean()
+    food_ratio = real_data['food_intake'].mean() / research_data['food_intake'].mean()
     research_data['pet_weight'] *= weight_ratio
     research_data['food_intake'] *= food_ratio
 
@@ -132,6 +132,7 @@ def visualize_data():
 
         if research_data.empty:
             return jsonify({"error": "No matching research data found after preprocessing."}), 400
+
 
         # Extract real data from payload
         real_data = payload['real_data']
@@ -217,58 +218,88 @@ def visualize_data():
                 "where observed values deviate from expected intake based on research data."
             )
 
+            # Apply square root transformation
+            df['sqrt_pet_weight'] = np.sqrt(real_data['pet_weight'])
+            df['sqrt_food_intake'] = np.sqrt(real_data['food_intake'])
 
+        # 3. Scatter Plot: Square Root of Pet Weight vs Square Root of Food Intake
+        fig, ax = plt.subplots(figsize=(8, 6))
 
-            # 3. Scatter Plot: Food Intake vs Pet Weight
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.scatter(df['food_intake'], df['pet_weight'], alpha=0.6, color='purple')
-            ax.set_title('Food Intake vs Pet Weight')
-            ax.set_xlabel('Food Intake (grams)')
-            ax.set_ylabel('Pet Weight (grams)')
-            scatter_plot_base64 = plot_to_base64(fig)
-            plt.close(fig)
+        # Create scatter plot with larger marker size
+        ax.scatter(
+            real_data['sqrt_pet_weight'],
+            real_data['sqrt_food_intake'],
+            alpha=0.5,  # Slightly less transparency to make points more visible
+            s=50,  # Increased marker size for higher density perception
+            color='purple',
+            label='Data Points'
+        )
 
-            scatter_conclusion = "Scatter plot shows the relationship between Food Intake and Pet Weight."
+        # Calculate regression line (Intake as a function of Pet Weight)
+        slope, intercept, _, _, _ = linregress(real_data['sqrt_pet_weight'], real_data['sqrt_food_intake'])
+        regression_line = slope * real_data['sqrt_pet_weight'] + intercept
 
-            # 4. Bar Chart: Average Pet Weight by Week
-            avg_weight = df.groupby('age_weeks')['pet_weight'].mean()
-            fig, ax = plt.subplots(figsize=(10, 6))
-            avg_weight.plot(kind='bar', color='green', edgecolor='black', ax=ax)
-            ax.set_title('Average Pet Weight by Age (Weeks)')
-            ax.set_xlabel('Age (Weeks)')
-            ax.set_ylabel('Average Weight')
-            bar_chart_base64 = plot_to_base64(fig)
-            plt.close(fig)
+        # Add regression line to plot
+        ax.plot(real_data['sqrt_pet_weight'], regression_line, color='red', label='Regression Line')
 
-            bar_chart_conclusion = "Bar chart visualizes the average pet weight per week."
+        # Add labels, title, and legend
+        ax.set_title('Square Root of Pet Weight vs Square Root of Food Intake with Regression Line')
+        ax.set_xlabel('Square Root of Pet Weight (grams)')
+        ax.set_ylabel('Square Root of Food Intake (grams)')
+        ax.legend()
 
-            # 5. Histogram: Food Intake Distribution
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.hist(df['food_intake'], bins=20, color='orange', edgecolor='black')
+        # Convert plot to Base64
+        scatter_plot_base64 = plot_to_base64(fig)
 
-            ax.set_title('Food Intake Distribution')
-            ax.set_xlabel('Food Intake (grams)')
-            ax.set_ylabel('Frequency')
-            histogram_base64 = plot_to_base64(fig)
-            plt.close(fig)
-            histogram_conclusion = "Histogram displays the distribution of food intake values."
+        # Close the figure
+        plt.close(fig)
 
-            returnList[str(item)] = {
-                "hasData": True,
-                "growth_trend_base64": growth_trend_base64,
-                "food_intake_trend_base64": food_intake_trend_base64,
-                "scatter_plot_base64": scatter_plot_base64,
-                "bar_chart_base64": bar_chart_base64,
-                "histogram_base64": histogram_base64,
-                "growth_trend_conclusion": growth_conclusion,
-                "food_intake_trend_conclusion": food_conclusion,
-                "scatter_plot_conclusion": scatter_conclusion,
-                "bar_chart_conclusion": bar_chart_conclusion,
-                "histogram_conclusion": histogram_conclusion,
-                "growth_anomalies": growth_anomalies,
-                "food_anomalies": food_anomalies
-            }
+        # Updated conclusion
+        scatter_conclusion = (
+            "The scatter plot visualizes the square root relationship between pet weight and food intake. "
+            "Larger markers improve the visibility of individual data points, and a regression line highlights the trend, making it easier to interpret the transformed relationship."
+        )
+        # 4. Histogram: Average Pet Weight by Week
+        avg_weight = real_data.groupby('age_weeks')['pet_weight'].mean()
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.hist(avg_weight, bins=10, color='green', edgecolor='black')
+        ax.set_title('Average Pet Weight Distribution by Age (Weeks)')
+        ax.set_xlabel('Average Weight')
+        ax.set_ylabel('Frequency')
+        histogram_base64_avg_weight = plot_to_base64(fig)
+        plt.close(fig)
 
+        histogram_conclusion_avg_weight = "Histogram displays the distribution of average pet weight per week."
+
+        # 5. Bar Chart: Food Intake Distribution
+        fig, ax = plt.subplots(figsize=(8, 6))
+        real_data['food_intake'].value_counts().sort_index().plot(kind='bar', color='orange', edgecolor='black',
+                                                                  ax=ax)  # Using bar chart instead of histogram
+        ax.set_title('Food Intake Distribution')
+        ax.set_xlabel('Food Intake (grams)')
+        ax.set_ylabel('Frequency')
+        bar_chart_base64_food_intake = plot_to_base64(fig)
+        plt.close(fig)
+
+        bar_chart_conclusion_food_intake = "Bar chart visualizes the frequency of food intake values."
+
+        returnList[str(item)] = {
+            "hasData": True,
+            "growth_trend_base64": growth_trend_base64,
+            "food_intake_trend_base64": food_intake_trend_base64,
+            "scatter_plot_base64": scatter_plot_base64,
+            "bar_chart_base64": bar_chart_base64,
+            "histogram_base64": histogram_base64,
+            "growth_trend_conclusion": growth_conclusion,
+            "food_intake_trend_conclusion": food_conclusion,
+            "scatter_plot_conclusion": scatter_conclusion,
+            "bar_chart_conclusion": bar_chart_conclusion,
+            "histogram_conclusion": histogram_conclusion,
+            "growth_anomalies": growth_anomalies,
+            "food_anomalies": food_anomalies
+        }
+
+        # Return response
         # print(returnList)
         return returnList
 
@@ -292,13 +323,15 @@ def detect_anomalies(weeks, expected_data, actual_data, threshold=0.1):
         print(f"Anomalies detected: {anomalies}")
         return anomalies
 
+
 def plot_to_base64(fig):
-    """Convert matplotlib figure to base64 for response."""
-    print("Converting plot to base64...")
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    buf.seek(0)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format='png')
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+    buffer.close()
+    return img_base64
+
 
 if __name__ == '__main__':
     app.run(debug=True)
