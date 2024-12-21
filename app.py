@@ -158,7 +158,7 @@ def visualize_data():
                 }
                 continue
 
-            research_data = preprocess_research_data(research_data, df)
+            processed_data = preprocess_research_data(research_data, df)
             df = df.sort_values(by="age_weeks")
             print(item)
             print("Parsed Real Data:\n", df.head())  # Debug
@@ -175,11 +175,11 @@ def visualize_data():
 
             # 1. Growth Trend Plot
             growth_anomalies = detect_anomalies(
-                df['age_weeks'], research_data['pet_weight'], df['pet_weight']
+                df['age_weeks'], processed_data['pet_weight'], df['pet_weight']
             )
             print("Detected Growth Anomalies:", growth_anomalies)
             fig, ax = plt.subplots(figsize=(8, 6))
-            ax.plot(research_data['age_weeks'], research_data['pet_weight'], label='Research Data', color='red', lw=2)
+            ax.plot(processed_data['age_weeks'], processed_data['pet_weight'], label='Research Data', color='blue', lw=2)
             ax.plot(df['age_weeks'], df['pet_weight'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
             ax.scatter(df['age_weeks'], df['pet_weight'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
             ax.set_title('Growth Trend')
@@ -196,12 +196,12 @@ def visualize_data():
 
             # 2. Food Intake Trend Plot
             food_anomalies = detect_anomalies(
-                df['age_weeks'], research_data['food_intake'], df['food_intake']
+                df['age_weeks'], processed_data['food_intake'], df['food_intake']
             )
 
             print("Detected Food Intake Anomalies:", food_anomalies)
             fig, ax = plt.subplots(figsize=(8, 6))
-            ax.plot(research_data['age_weeks'], research_data['food_intake'], label='Research Data', color='blue', lw=2)
+            ax.plot(processed_data['age_weeks'], processed_data['food_intake'], label='Research Data', color='blue', lw=2)
             ax.plot(df['age_weeks'], df['food_intake'], label='Real Data (Line)', color='orange', linestyle='--', lw=2)
             ax.scatter(df['age_weeks'], df['food_intake'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
             ax.set_title('Food Intake Trend')
