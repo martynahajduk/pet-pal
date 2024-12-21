@@ -143,6 +143,7 @@ def visualize_data():
 
             if not all(col in df.columns for col in required_columns):
                 returnList[str(item)] = {
+                    "hasData": False,
                     "growth_trend_base64": None,
                     "food_intake_trend_base64": None,
                     "scatter_plot_base64": None,
@@ -253,6 +254,7 @@ def visualize_data():
             histogram_conclusion = "Histogram displays the distribution of food intake values."
 
             returnList[str(item)] = {
+                "hasData": True,
                 "growth_trend_base64": growth_trend_base64,
                 "food_intake_trend_base64": food_intake_trend_base64,
                 "scatter_plot_base64": scatter_plot_base64,
