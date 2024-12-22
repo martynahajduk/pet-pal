@@ -184,7 +184,6 @@ def visualize_data():
             ax.plot(processed_data['age_weeks'], processed_data['pet_weight'], label='Research Data', color='blue', lw=2)
             ax.plot(df['age_weeks'], df['pet_weight'], label='Real Data (Line)', color='orange', lw=2, linestyle='--')
             ax.scatter(df['age_weeks'], df['pet_weight'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
-            ax.set_title('Growth Trend')
             ax.set_xlabel('Age (weeks)')
             ax.set_ylabel('Weight')
             ax.legend()
@@ -192,8 +191,8 @@ def visualize_data():
             plt.close(fig)
 
             growth_conclusion = (
-                "The Growth Trend indicates deviations in weight at weeks where real data differs "
-                "from research expectations. Anomalies are detected where deviations exceed 10%."
+                "The Growth Trend indicates deviations in weight at weeks where real data differs from research expectations. "
+                "These anomalies indicate unusual growth patterns and should be monitored! "
             )
 
             # 2. Food Intake Trend Plot
@@ -206,7 +205,6 @@ def visualize_data():
             ax.plot(processed_data['age_weeks'], processed_data['food_intake'], label='Research Data', color='blue', lw=2)
             ax.plot(df['age_weeks'], df['food_intake'], label='Real Data (Line)', color='orange', linestyle='--', lw=2)
             ax.scatter(df['age_weeks'], df['food_intake'], label='Real Data (Points)', color='orange', edgecolor='black', s=80)
-            ax.set_title('Food Intake Trend')
             ax.set_xlabel('Age (weeks)')
             ax.set_ylabel('Food Intake')
             ax.legend()
@@ -214,8 +212,8 @@ def visualize_data():
             plt.close(fig)
 
             food_conclusion = (
-                "The Food Intake Trend shows significant differences in intake at weeks "
-                "where observed values deviate from expected intake based on research data."
+                "The Food Intake Trend shows significant differences in intake at weeks. "
+                "These Anomalies may indicate unusual feeding patterns and should be monitored!"
             )
 
             # Apply square root transformation
@@ -243,9 +241,9 @@ def visualize_data():
             ax.plot(df['sqrt_pet_weight'], regression_line, color='red', label='Regression Line')
 
             # Add labels, title, and legend
-            ax.set_title('Square Root of Pet Weight vs Square Root of Food Intake with Regression Line')
-            ax.set_xlabel('Square Root of Pet Weight (grams)')
-            ax.set_ylabel('Square Root of Food Intake (grams)')
+            ax.set_title('Pet Weight vs Food Intake')
+            ax.set_xlabel('Pet Weight (grams)')
+            ax.set_ylabel('Food Intake (grams)')
             ax.legend()
 
             # Convert plot to Base64
@@ -256,16 +254,16 @@ def visualize_data():
 
             # Updated conclusion
             scatter_conclusion = (
-                "The scatter plot visualizes the square root relationship between pet weight and food intake. "
+                "The scatter plot visualizes the  relationship between pet weight and food intake. "
                 "Larger markers improve the visibility of individual data points, and a regression line highlights the trend, making it easier to interpret the transformed relationship."
             )
             # 4. Histogram: Average Pet Weight by Week
             avg_weight = df.groupby('age_weeks')['pet_weight'].mean()
             fig, ax = plt.subplots(figsize=(10, 6))
-            ax.hist(avg_weight, bins=10, color='green', edgecolor='black')
+            ax.hist(avg_weight, bins=5, color='green', edgecolor='black')
             ax.set_title('Average Pet Weight Distribution by Age (Weeks)')
             ax.set_xlabel('Average Weight')
-            ax.set_ylabel('Frequency')
+            ax.set_ylabel('Number of Weeks')
             histogram_base64_avg_weight = plot_to_base64(fig)
             plt.close(fig)
 
@@ -282,6 +280,29 @@ def visualize_data():
 
             bar_chart_conclusion_food_intake = "Bar chart visualizes the frequency of food intake values."
 
+            # 6. Heatmap: Correlation Heatmap of Features
+            correlation_matrix = df[['age_weeks', 'pet_weight', 'food_intake']].corr()
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.heatmap(
+                correlation_matrix,
+                annot=True,  # Display the correlation coefficients
+                cmap="coolwarm",  # Color map
+                fmt=".2f",  # Format for numbers
+                square=True,  # Make heatmap square
+                cbar_kws={'label': 'Correlation Coefficient'}  # Label for color bar
+            )
+            plt.title("Feature Correlation Heatmap")
+            heatmap_base64 = plot_to_base64(fig)
+            plt.close(fig)
+
+            heatmap_conclusion = (
+                "The heatmap shows the correlations between age (weeks), pet weight, and food intake. "
+                "Positive correlations suggest that the features increase together, while negative correlations "
+                "suggest an inverse relationship."
+            )
+
+
             returnList[str(item)] = {
                 "hasData": True,
                 "growth_trend_base64": growth_trend_base64,
@@ -294,6 +315,8 @@ def visualize_data():
                 "scatter_plot_conclusion": scatter_conclusion,
                 "bar_chart_conclusion": bar_chart_conclusion_food_intake,
                 "histogram_conclusion": histogram_conclusion_avg_weight,
+                "heatmap_base64": heatmap_base64,
+                "heatmap_conclusion": heatmap_conclusion,
                 "growth_anomalies": growth_anomalies,
                 "food_anomalies": food_anomalies
             }
